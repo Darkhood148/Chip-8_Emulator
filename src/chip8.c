@@ -23,21 +23,44 @@ typedef enum {
     PAUSED,
 } emulator_state_t;
 
+//instruction struct
+typedef struct {
+    uint16_t opcode;
+    uint16_t NNN; // 12 bit address/constant
+    uint8_t NN;   //  8 bit constant
+    uint8_t N;    //  4 bit constant
+    uint8_t X;    //  4 bit register identifier
+    uint8_t Y;    //  4 bit register identifier
+} instruction_t;
+
 //chip8 struct
 typedef struct {
     emulator_state_t state;
+    uint8_t ram[4096];
+    bool display[64 * 32];
+    uint16_t stack[12];
+    uint8_t V[16]; //V0-VF registers
+    uint16_t I; //Index Register
+    uint16_t PC; //Program counter
+    uint8_t delayTimer;
+    uint8_t soundTimer;
+    bool keypad[16];
+    instruction_t inst;
+    const char *romName;
 } chip8_t;
 
+//sets configurations for sdl/window
 bool set_config(config_t *config, int argc, char **argv) {
     *config = (config_t) {
             .windowWidth = 64,
             .windowHeight = 32,
             .fgColor = 0xFFFFFFFF,
-            .bgColor = 0x00000000,
+            .bgColor = 0x000000FF,
             .scaleFactor = 20,
     };
 }
 
+//inits SDL
 bool init_sdl(sdl_t *sdl, const config_t config) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) != 0) {
         SDL_Log("Error Occurred: %s", SDL_GetError());
@@ -55,17 +78,65 @@ bool init_sdl(sdl_t *sdl, const config_t config) {
 }
 
 //Initialize Chip-8
-bool init_chip8(chip8_t *chip8) {
+bool init_chip8(chip8_t *chip8, const char *romName) {
+    const uint32_t entryPoint = 0x200;
+    const uint8_t font[] = {
+            0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
+            0x20, 0x60, 0x20, 0x20, 0x70, // 1
+            0xF0, 0x10, 0xF0, 0x80, 0xF0, // 2
+            0xF0, 0x10, 0xF0, 0x10, 0xF0, // 3
+            0x90, 0x90, 0xF0, 0x10, 0x10, // 4
+            0xF0, 0x80, 0xF0, 0x10, 0xF0, // 5
+            0xF0, 0x80, 0xF0, 0x90, 0xF0, // 6
+            0xF0, 0x10, 0x20, 0x40, 0x40, // 7
+            0xF0, 0x90, 0xF0, 0x90, 0xF0, // 8
+            0xF0, 0x90, 0xF0, 0x10, 0xF0, // 9
+            0xF0, 0x90, 0xF0, 0x90, 0x90, // A
+            0xE0, 0x90, 0xE0, 0x90, 0xE0, // B
+            0xF0, 0x80, 0x80, 0x80, 0xF0, // C
+            0xE0, 0x90, 0x90, 0x90, 0xE0, // D
+            0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
+            0xF0, 0x80, 0xF0, 0x80, 0x80  // F
+    };
+
+    memcpy(&chip8->ram[0], &font[0], sizeof(font));
+
+    FILE *rom = fopen(romName, "rb");
+    if (!rom) {
+        SDL_Log("File: %s does not exist", romName);
+        return false;
+    }
+
+    fseek(rom, 0, SEEK_END);
+    const size_t romSize = ftell(rom);
+    const size_t maxSize = sizeof(chip8->ram) - entryPoint;
+    rewind(rom);
+
+    if (romSize > maxSize) {
+        SDL_Log("Rom file too big");
+        return false;
+    }
+
+    if (fread(&chip8->ram[entryPoint], romSize, 1, rom) != 1) {
+        SDL_Log("Could not read file into ram");
+        return false;
+    }
+
+    fclose(rom);
     chip8->state = RUNNING;
+    chip8->PC = entryPoint;
+    chip8->romName = romName;
     return true;
 }
 
+//Quit SDL
 bool quit_sdl(const sdl_t sdl) {
     SDL_DestroyRenderer(sdl.renderer);
     SDL_DestroyWindow(sdl.window);
     SDL_Quit();
 }
 
+//Update backbuffer to a color
 void clear_screen(const sdl_t sdl, const config_t config) {
     uint8_t r = (config.bgColor >> 24) & 0xFF;
     uint8_t g = (config.bgColor >> 16) & 0xFF;
@@ -76,10 +147,12 @@ void clear_screen(const sdl_t sdl, const config_t config) {
     SDL_RenderClear(sdl.renderer);
 }
 
+//bring backbuffer to screen
 void update_screen(const sdl_t sdl) {
     SDL_RenderPresent(sdl.renderer);
 }
 
+//handle user events
 void handle_input(chip8_t *chip8) {
     SDL_Event event;
 
@@ -88,12 +161,21 @@ void handle_input(chip8_t *chip8) {
             case SDL_QUIT:
                 chip8->state = QUIT;
                 return;
-            case SDL_KEYDOWN:
-                break;
             case SDL_KEYUP:
-                switch(event.key.keysym.sym) {
+                break;
+            case SDL_KEYDOWN:
+                switch (event.key.keysym.sym) {
                     case SDLK_ESCAPE:
                         chip8->state = QUIT;
+                        return;
+                    case SDLK_SPACE:
+                        if (chip8->state == RUNNING) {
+                            chip8->state = PAUSED;
+                            puts("====Paused====");
+                        } else if (chip8->state == PAUSED) {
+                            chip8->state = RUNNING;
+                            puts("====Resumed====");
+                        }
                         return;
                     default:
                         return;
@@ -105,11 +187,21 @@ void handle_input(chip8_t *chip8) {
     }
 }
 
+void emulate_instruction(chip8_t *chip8) {
+    chip8->inst.opcode = (chip8->ram[chip8->PC] << 8) | chip8->ram[chip8->PC + 1];
+    chip8->PC += 2;
+}
+
 int main(int argc, char **argv) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <rom-path>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
     sdl_t sdl = {0};
     config_t config = {0};
     chip8_t chip8 = {0};
-    if (!init_chip8(&chip8))
+    const char *romName = argv[1];
+    if (!init_chip8(&chip8, romName))
         exit(EXIT_FAILURE);
     set_config(&config, argc, argv);
     if (!init_sdl(&sdl, config)) {
@@ -118,6 +210,8 @@ int main(int argc, char **argv) {
     clear_screen(sdl, config);
     while (chip8.state != QUIT) {
         handle_input(&chip8);
+        if (chip8.state == PAUSED)
+            continue;
         update_screen(sdl);
         SDL_Delay(16);
     }

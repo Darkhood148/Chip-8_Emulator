@@ -144,7 +144,10 @@ void print_debug_info(chip8_t *chip8) {
         }
         break;
     case 0x02:
-        printf("Idk bruh\n");
+        printf("Calls subroutine at NNN\n");
+        break;
+    case 0x0A:
+        printf("Sets instruction register to NNN (0x%04X)\n", chip8->inst.NNN);
         break;
     default:
         printf("Unimplemented Opcode\n");
@@ -234,10 +237,16 @@ void emulate_instruction(chip8_t *chip8) {
                 // 0x00EE Return from subroutine
                 chip8->PC = *--chip8->stackPtr;
             }
+            break;
         case 0x02:
             // 0x2NNN call subroutine at NNN
             *chip8->stackPtr++ = chip8->PC;
             chip8->PC = chip8->inst.NNN;
+            break;
+        case 0x0A:
+            // 0xANNN Sets index register I to NNN
+            chip8->I = chip8->inst.NNN;
+            break;
         default:
             break;
     }

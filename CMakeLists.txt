@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 project(chip8)
+add_definitions(-DDEBUG)
 
 # Create an option to switch between a system sdl library and a vendored sdl library
 option(MYGAME_VENDORED "Use vendored libraries" OFF)

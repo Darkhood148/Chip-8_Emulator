@@ -146,6 +146,9 @@ void print_debug_info(chip8_t *chip8) {
     case 0x02:
         printf("Calls subroutine at NNN\n");
         break;
+    case 0x06:
+        printf("Sets value of register V%X to NN (0x%02X)\n", chip8->inst.X, chip8->inst.NN);
+        break;
     case 0x0A:
         printf("Sets instruction register to NNN (0x%04X)\n", chip8->inst.NNN);
         break;
@@ -242,6 +245,10 @@ void emulate_instruction(chip8_t *chip8) {
             // 0x2NNN call subroutine at NNN
             *chip8->stackPtr++ = chip8->PC;
             chip8->PC = chip8->inst.NNN;
+            break;
+        case 0x06:
+            // 0x6XNN sets value of register VX to NN
+            chip8->V[chip8->inst.X] = chip8->inst.NN;
             break;
         case 0x0A:
             // 0xANNN Sets index register I to NNN

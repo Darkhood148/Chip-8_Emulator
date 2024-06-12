@@ -132,39 +132,53 @@ bool init_chip8(chip8_t *chip8, const char *romName) {
 }
 
 #ifdef DEBUG
+
 void print_debug_info(chip8_t *chip8) {
-    printf("Adress: 0x%04X, Opcode: 0x%04X Desc: ", chip8->PC-2, chip8->inst.opcode);
+    printf("Adress: 0x%04X, Opcode: 0x%04X Desc: ", chip8->PC - 2, chip8->inst.opcode);
     switch ((chip8->inst.opcode >> 12) & 0x000F) {
-    case 0x0:
-        //clear the screen
-        if(chip8->inst.NN == 0xE0) {
-            printf("Clears the screen\n");
-        } else if (chip8->inst.NN == 0xEE) {
-            printf("Returned from subroutine to address 0x%04X\n", *(chip8->stackPtr - 1));
-        } else {
-            printf("Unimplemented Opcode")
-        }
-        break;
-    case 0x01:
-        printf("Jumps to address: 0x%04X\n", chip8->inst.NNN);
-        break;
-    case 0x02:
-        printf("Calls subroutine at NNN\n");
-        break;
-    case 0x06:
-        printf("Sets value of register V%X to NN (0x%02X)\n", chip8->inst.X, chip8->inst.NN);
-        break;
-    case 0x0A:
-        printf("Sets instruction register to NNN (0x%04X)\n", chip8->inst.NNN);
-        break;
-    case 0x0D:
-        printf("Drawing");
-        break;
-    default:
-        printf("Unimplemented Opcode\n");
-        break;
+        case 0x0:
+            //clear the screen
+            if (chip8->inst.NN == 0xE0) {
+                printf("Clears the screen\n");
+            } else if (chip8->inst.NN == 0xEE) {
+                printf("Returned from subroutine to address 0x%04X\n", *(chip8->stackPtr - 1));
+            } else {
+                printf("Unimplemented Opcode")
+            }
+            break;
+        case 0x01:
+            printf("Jumps to address: 0x%04X\n", chip8->inst.NNN);
+            break;
+        case 0x02:
+            printf("Calls subroutine at NNN\n");
+            break;
+        case 0x03:
+            printf("Checks if value of V%X (0x%02X) is equal to NN (0x%02X). If yes, skips next instruction (0x%04X)",
+                   chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.NN, chip8->PC);
+            break;
+        case 0x04:
+            printf("Checks if value of V%X (0x%02X) is not equal to NN (0x%02X). If yes, skips next instruction (0x%04X)",
+                   chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.NN, chip8->PC);
+            break;
+        case 0x05:
+            printf("Checks if value of V%X (0x%02X) is equal to V%X (0x%02X). If yes skips next instruction (0x%04X)",
+                   chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.Y, chip8->V[chip8->inst.Y], chip8->PC);
+            break;
+        case 0x06:
+            printf("Sets value of register V%X to NN (0x%02X)\n", chip8->inst.X, chip8->inst.NN);
+            break;
+        case 0x0A:
+            printf("Sets instruction register to NNN (0x%04X)\n", chip8->inst.NNN);
+            break;
+        case 0x0D:
+            printf("Drawing");
+            break;
+        default:
+            printf("Unimplemented Opcode\n");
+            break;
     }
 }
+
 #endif
 
 //Quit SDL
@@ -256,6 +270,24 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
             // 0x2NNN call subroutine at NNN
             *chip8->stackPtr++ = chip8->PC;
             chip8->PC = chip8->inst.NNN;
+            break;
+        case 0x03:
+            // checks if Vx == NN. If yes, skips next instruction
+            if (chip8->V[chip8->inst.X] == chip8->inst.NN) {
+                chip8->PC += 2;
+            }
+            break;
+        case 0x04:
+            // checks if Vx != NN. If yes, skips next instruction
+            if (chip8->V[chip8->inst.X] != chip8->inst.NN) {
+                chip8->PC += 2;
+            }
+            break;
+        case 0x05:
+            // 0x5XY0 checks if Vx == Vy. If yes, skips next instruction
+            if (chip8->V[chip8->inst.X] == chip8->V[chip8->inst.Y]) {
+                chip8->PC += 2;
+            }
             break;
         case 0x06:
             // 0x6XNN sets value of register VX to NN

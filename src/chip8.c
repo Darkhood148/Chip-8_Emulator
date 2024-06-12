@@ -137,10 +137,12 @@ void print_debug_info(chip8_t *chip8) {
     switch ((chip8->inst.opcode >> 12) & 0x000F) {
     case 0x0:
         //clear the screen
-        if(chip8->inst.NN = 0xE0) {
+        if(chip8->inst.NN == 0xE0) {
             printf("Clears the screen\n");
-        } else {
+        } else if (chip8->inst.NN == 0xEE) {
             printf("Returned from subroutine to address 0x%04X\n", *(chip8->stackPtr - 1));
+        } else {
+            printf("Unimplemented Opcode")
         }
         break;
     case 0x02:
@@ -151,6 +153,9 @@ void print_debug_info(chip8_t *chip8) {
         break;
     case 0x0A:
         printf("Sets instruction register to NNN (0x%04X)\n", chip8->inst.NNN);
+        break;
+    case 0x0D:
+        printf("Drawing");
         break;
     default:
         printf("Unimplemented Opcode\n");
@@ -217,7 +222,7 @@ void handle_input(chip8_t *chip8) {
     }
 }
 
-void emulate_instruction(chip8_t *chip8) {
+void emulate_instruction(chip8_t *chip8, config_t config) {
     chip8->inst.opcode = (chip8->ram[chip8->PC] << 8) | chip8->ram[chip8->PC + 1];
     chip8->PC += 2;
 
@@ -236,7 +241,7 @@ void emulate_instruction(chip8_t *chip8) {
             if (chip8->inst.NN == 0XE0) {
                 // 0x00E0 Clear the screen
                 memset(&chip8->display[0], false, sizeof(chip8->display));
-            } else if (chip8->inst.opcode == 0xEE) {
+            } else if (chip8->inst.NN == 0xEE) {
                 // 0x00EE Return from subroutine
                 chip8->PC = *--chip8->stackPtr;
             }
@@ -254,6 +259,40 @@ void emulate_instruction(chip8_t *chip8) {
             // 0xANNN Sets index register I to NNN
             chip8->I = chip8->inst.NNN;
             break;
+        case 0x0D: {
+            // 0xDXYN Draws N-height sprites at cords X,Y; Read from memory location I
+            // Screen pixels are XOR'd with sprite bits
+            // VF (Carry Flag) is set if any screen pixels are switched off
+            uint8_t X_cord = chip8->V[chip8->inst.X] % config.windowWidth;
+            uint8_t Y_Cord = chip8->V[chip8->inst.Y] % config.windowHeight;
+            const uint8_t orig_X = X_cord;
+
+            chip8->V[0xF] = 0;
+
+            for (uint8_t i = 0; i < chip8->inst.N; i++) {
+
+                const uint8_t sprite_data = chip8->ram[chip8->I + i];
+                X_cord = orig_X;
+
+                for (int8_t j = 7; j >= 0; j--) {
+                    bool *pixel = &chip8->display[Y_Cord * config.windowWidth + X_cord];
+                    const bool sprite_bit = (sprite_data && (1 << j));
+
+                    if (sprite_bit && *pixel) {
+                        chip8->V[0xF] = 1;
+                    }
+
+                    *pixel ^= sprite_bit;
+
+                    if (++X_cord >= config.windowWidth)
+                        break;
+                }
+
+                if (++Y_Cord >= config.windowHeight)
+                    break;
+            }
+            break;
+        }
         default:
             break;
     }
@@ -279,7 +318,7 @@ int main(int argc, char **argv) {
         handle_input(&chip8);
         if (chip8.state == PAUSED)
             continue;
-        emulate_instruction(&chip8);
+        emulate_instruction(&chip8, config);
         update_screen(sdl);
         SDL_Delay(16);
     }

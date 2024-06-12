@@ -145,6 +145,9 @@ void print_debug_info(chip8_t *chip8) {
             printf("Unimplemented Opcode")
         }
         break;
+    case 0x01:
+        printf("Jumps to address: 0x%04X\n", chip8->inst.NNN);
+        break;
     case 0x02:
         printf("Calls subroutine at NNN\n");
         break;
@@ -245,6 +248,9 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
                 // 0x00EE Return from subroutine
                 chip8->PC = *--chip8->stackPtr;
             }
+            break;
+        case 0x01:
+            chip8->PC = chip8->inst.NNN;
             break;
         case 0x02:
             // 0x2NNN call subroutine at NNN

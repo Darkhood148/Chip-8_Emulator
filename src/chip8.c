@@ -14,6 +14,7 @@ typedef struct {
     uint32_t fgColor;
     uint32_t bgColor;
     uint32_t scaleFactor;
+    bool pixelOutlines;
 } config_t;
 
 //emulator states
@@ -58,6 +59,7 @@ bool set_config(config_t *config, int argc, char **argv) {
             .fgColor = 0xFFFFFFFF,
             .bgColor = 0x000000FF,
             .scaleFactor = 20,
+            .pixelOutlines = true,
     };
 }
 
@@ -143,7 +145,7 @@ void print_debug_info(chip8_t *chip8) {
             } else if (chip8->inst.NN == 0xEE) {
                 printf("Returned from subroutine to address 0x%04X\n", *(chip8->stackPtr - 1));
             } else {
-                printf("Unimplemented Opcode\n")
+                printf("Unimplemented Opcode\n");
             }
             break;
         case 0x01:
@@ -220,11 +222,19 @@ void print_debug_info(chip8_t *chip8) {
                     break;
             }
             break;
+        case 0x09:
+            // 0x9XY0 Skips the next instruction if VX != VY
+            printf("Skips the next instruction if V%X (0x%02X) != V%X (0x%02X)\n", chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.Y, chip8->V[chip8->inst.Y]);
+            break;
         case 0x0A:
             printf("Sets instruction register to NNN (0x%04X)\n", chip8->inst.NNN);
             break;
+        case 0x0B:
+            // 0xBNNN sets PC to V0 + NNN
+            printf("Sets the PC to V0 (0x%02X) + NNN (0x%04X)", chip8->V[0x0], chip8->inst.NNN);
+            break;
         case 0x0D:
-            printf("Drawing");
+            printf("Drawing\n");
             break;
         default:
             printf("Unimplemented Opcode\n");
@@ -253,7 +263,37 @@ void clear_screen(const sdl_t sdl, const config_t config) {
 }
 
 //bring backbuffer to screen
-void update_screen(const sdl_t sdl) {
+void update_screen(const sdl_t sdl, const config_t config, const chip8_t *chip8) {
+    SDL_Rect rect = {.x = 0, .y = 0, .w = config.scaleFactor, .h = config.scaleFactor};
+
+    const uint8_t fg_r = (config.fgColor >> 24) & 0xFF;
+    const uint8_t fg_g = (config.fgColor >> 16) & 0xFF;
+    const uint8_t fg_b = (config.fgColor >> 8) & 0xFF;
+    const uint8_t fg_a = (config.fgColor >> 0) & 0xFF;
+
+    const uint8_t bg_r = (config.bgColor >> 24) & 0xFF;
+    const uint8_t bg_g = (config.bgColor >> 16) & 0xFF;
+    const uint8_t bg_b = (config.bgColor >> 8) & 0xFF;
+    const uint8_t bg_a = (config.bgColor >> 0) & 0xFF;
+
+    for (uint32_t i = 0; i < sizeof(chip8->display); i++) {
+        rect.x = (i % config.windowWidth) * config.scaleFactor;
+        rect.y = (i / config.windowWidth) * config.scaleFactor;
+//        printf("Bruh %d %d %d\n", rect.x, rect.y, chip8->display[i]);
+
+        if (chip8->display[i]) {
+            SDL_SetRenderDrawColor(sdl.renderer, fg_r, fg_g, fg_b, fg_a);
+            SDL_RenderFillRect(sdl.renderer, &rect);
+
+            if (config.pixelOutlines) {
+                SDL_SetRenderDrawColor(sdl.renderer, bg_r, bg_g, bg_b, bg_a);
+                SDL_RenderDrawRect(sdl.renderer, &rect);
+            }
+        } else {
+            SDL_SetRenderDrawColor(sdl.renderer, bg_r, bg_g, bg_b, bg_a);
+            SDL_RenderFillRect(sdl.renderer, &rect);
+        }
+    }
     SDL_RenderPresent(sdl.renderer);
 }
 
@@ -370,7 +410,7 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
                     break;
                 case 0x4:
                     // 0x8XY4 sets VX += VY sets VF = 1 if there is an overflow otherwise sets VF = 0
-                    if (chip8->V[chip8->inst.X] & chip8->V[chip8->inst.Y] & 0x80) { // checking for overflow
+                    if ((uint16_t) chip8->V[chip8->inst.X] + chip8->V[chip8->inst.Y] >= 0xFF) { // checking for overflow
                         chip8->V[0xF] = 1;
                     } else {
                         chip8->V[0xF] = 0;
@@ -387,7 +427,7 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
                     chip8->V[chip8->inst.X] -= chip8->V[chip8->inst.Y];
                     break;
                 case 0x6:
-                    // 0x8XY6 performs VX >>= VY and sets VF to the LSB of VX prior to shift
+                    // 0x8XY6 performs VX >>= 1 and sets VF to the LSB of VX prior to shift
                     chip8->V[0xF] = chip8->V[chip8->inst.X] & 0x1;
                     chip8->V[chip8->inst.X] >>= 1;
                     break;
@@ -402,14 +442,24 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
                     break;
                 case 0xE:
                     // 0x8XYE performs VX <<= VY and sets VF to the MSB of VX prior to shift
-                    chip8->V[0xF] = chip8->V[chip8->inst.X] & 0x80;
+                    chip8->V[0xF] = (chip8->V[chip8->inst.X] & 0x80) >> 0x7;
                     chip8->V[chip8->inst.X] <<= 1;
                     break;
+            }
+            break;
+        case 0x09:
+            // 0x9XY0 Skips the next instruction if VX != VY
+            if (chip8->V[chip8->inst.X] != chip8->V[chip8->inst.Y]) {
+                chip8->PC += 2;
             }
             break;
         case 0x0A:
             // 0xANNN Sets index register I to NNN
             chip8->I = chip8->inst.NNN;
+            break;
+        case 0x0B:
+            // 0xBNNN sets PC to V0 + NNN
+            chip8->PC = chip8->V[0x0] + chip8->inst.NNN;
             break;
         case 0x0D: {
             // 0xDXYN Draws N-height sprites at cords X,Y; Read from memory location I
@@ -428,7 +478,7 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
 
                 for (int8_t j = 7; j >= 0; j--) {
                     bool *pixel = &chip8->display[Y_Cord * config.windowWidth + X_cord];
-                    const bool sprite_bit = (sprite_data && (1 << j));
+                    const bool sprite_bit = (sprite_data & (1 << j));
 
                     if (sprite_bit && *pixel) {
                         chip8->V[0xF] = 1;
@@ -471,7 +521,7 @@ int main(int argc, char **argv) {
         if (chip8.state == PAUSED)
             continue;
         emulate_instruction(&chip8, config);
-        update_screen(sdl);
+        update_screen(sdl, config, &chip8);
         SDL_Delay(16);
     }
     quit_sdl(sdl);

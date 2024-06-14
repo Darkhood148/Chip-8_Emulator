@@ -143,7 +143,7 @@ void print_debug_info(chip8_t *chip8) {
             } else if (chip8->inst.NN == 0xEE) {
                 printf("Returned from subroutine to address 0x%04X\n", *(chip8->stackPtr - 1));
             } else {
-                printf("Unimplemented Opcode")
+                printf("Unimplemented Opcode\n")
             }
             break;
         case 0x01:
@@ -153,22 +153,72 @@ void print_debug_info(chip8_t *chip8) {
             printf("Calls subroutine at NNN\n");
             break;
         case 0x03:
-            printf("Checks if value of V%X (0x%02X) is equal to NN (0x%02X). If yes, skips next instruction (0x%04X)",
+            printf("Checks if value of V%X (0x%02X) is equal to NN (0x%02X). If yes, skips next instruction (0x%04X)\n",
                    chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.NN, chip8->PC);
             break;
         case 0x04:
-            printf("Checks if value of V%X (0x%02X) is not equal to NN (0x%02X). If yes, skips next instruction (0x%04X)",
+            printf("Checks if value of V%X (0x%02X) is not equal to NN (0x%02X). If yes, skips next instruction (0x%04X)\n",
                    chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.NN, chip8->PC);
             break;
         case 0x05:
-            printf("Checks if value of V%X (0x%02X) is equal to V%X (0x%02X). If yes skips next instruction (0x%04X)",
+            printf("Checks if value of V%X (0x%02X) is equal to V%X (0x%02X). If yes skips next instruction (0x%04X)\n",
                    chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.Y, chip8->V[chip8->inst.Y], chip8->PC);
             break;
         case 0x06:
             printf("Sets value of register V%X to NN (0x%02X)\n", chip8->inst.X, chip8->inst.NN);
             break;
         case 0x07:
-            printf("Adds NN (0x%02X) to V%X", chip8->inst.NN, chip8->inst.X);
+            printf("Adds NN (0x%02X) to V%X\n", chip8->inst.NN, chip8->inst.X);
+            break;
+        case 0x08:
+            switch (chip8->inst.N) {
+                case 0x0:
+                    // 0x8XY0 sets VX = VY
+                    printf("Sets V%X (0x%02X) to V%X (0x%02X)\n", chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.Y,
+                           chip8->V[chip8->inst.Y]);
+                    break;
+                case 0x1:
+                    // 0x8XY1 performs VX |= VY
+                    printf("Performs V%X (0x%02X) |= V%X (0x%02X)\n", chip8->inst.X, chip8->V[chip8->inst.X],
+                           chip8->inst.Y, chip8->V[chip8->inst.Y]);
+                    break;
+                case 0x2:
+                    // 0x8XY2 performs VX &= VY
+                    printf("Performs V%X (0x%02X) &= V%X (0x%02X)\n", chip8->inst.X, chip8->V[chip8->inst.X],
+                           chip8->inst.Y, chip8->V[chip8->inst.Y]);
+                    break;
+                case 0x3:
+                    // 0x8XY3 performs VX ^= VY
+                    printf("Performs V%X (0x%02X) ^= V%X (0x%02X)\n", chip8->inst.X, chip8->V[chip8->inst.X],
+                           chip8->inst.Y, chip8->V[chip8->inst.Y]);
+                    break;
+                case 0x4:
+                    // 0x8XY4 sets VX += VY sets VF = 1 if there is an overflow otherwise sets VF = 0
+                    printf("Performs V%X (0x%02X) += V%X (0x%02X) and sets VF as per overflow occuring/not occuring\n",
+                           chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.Y, chip8->V[chip8->inst.Y]);
+                    break;
+                case 0x5:
+                    // 0x8XY5 performs VX -= VY sets VF = 0 if there is an underflow otherwise sets VF = 1
+                    printf("Performs V%X (0x%02X) += V%X (0x%02X) and sets VF as per underflow occuring/not occuring\n",
+                           chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.Y, chip8->V[chip8->inst.Y]);
+                    break;
+                case 0x6:
+                    // 0x8XY6 performs VX >>= VY and sets VF to the LSB of VX prior to shift
+                    printf("Performs V%X (0x%02X) >>= 1 and sets VF to the LSB of V%X prior to shift\n", chip8->inst.X,
+                           chip8->V[chip8->inst.X], chip8->inst.X);
+                    break;
+                case 0x7:
+                    // 0x8XY7 performs VX = VY - VX and sets VF = 0 when there is an underflow else set VF = 0
+                    printf("Performs V%X (0x%02X) = V%X (0x%02X) - V%X and sets VF as per underflow occuring/not occuring\n",
+                           chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.Y, chip8->V[chip8->inst.Y],
+                           chip8->inst.X);
+                    break;
+                case 0xE:
+                    // 0x8XYE performs VX <<= VY and sets VF to the MSB of VX prior to shift
+                    printf("Performs V%X (0x%02X) <<= 1 and sets VF to the MSB of V%X prior to shift\n", chip8->inst.X,
+                           chip8->V[chip8->inst.X], chip8->inst.X);
+                    break;
+            }
             break;
         case 0x0A:
             printf("Sets instruction register to NNN (0x%04X)\n", chip8->inst.NNN);
@@ -297,7 +347,65 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
             chip8->V[chip8->inst.X] = chip8->inst.NN;
             break;
         case 0x07:
+            // 0x7XNN adds VX to NN
             chip8->V[chip8->inst.X] += chip8->inst.NN;
+            break;
+        case 0x08:
+            switch (chip8->inst.N) {
+                case 0x0:
+                    // 0x8XY0 sets VX = VY
+                    chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y];
+                    break;
+                case 0x1:
+                    // 0x8XY1 performs VX |= VY
+                    chip8->V[chip8->inst.X] |= chip8->V[chip8->inst.Y];
+                    break;
+                case 0x2:
+                    // 0x8XY2 performs VX &= VY
+                    chip8->V[chip8->inst.X] &= chip8->V[chip8->inst.Y];
+                    break;
+                case 0x3:
+                    // 0x8XY3 performs VX |= VY
+                    chip8->V[chip8->inst.X] ^= chip8->V[chip8->inst.Y];
+                    break;
+                case 0x4:
+                    // 0x8XY4 sets VX += VY sets VF = 1 if there is an overflow otherwise sets VF = 0
+                    if (chip8->V[chip8->inst.X] & chip8->V[chip8->inst.Y] & 0x80) { // checking for overflow
+                        chip8->V[0xF] = 1;
+                    } else {
+                        chip8->V[0xF] = 0;
+                    }
+                    chip8->V[chip8->inst.X] += chip8->V[chip8->inst.Y];
+                    break;
+                case 0x5:
+                    // 0x8XY5 performs VX -= VY sets VF = 0 if there is an underflow otherwise sets VF = 1
+                    if (chip8->V[chip8->inst.X] >= chip8->V[chip8->inst.Y]) { // checking for underflow
+                        chip8->V[0xF] = 1;
+                    } else {
+                        chip8->V[0xF] = 0;
+                    }
+                    chip8->V[chip8->inst.X] -= chip8->V[chip8->inst.Y];
+                    break;
+                case 0x6:
+                    // 0x8XY6 performs VX >>= VY and sets VF to the LSB of VX prior to shift
+                    chip8->V[0xF] = chip8->V[chip8->inst.X] & 0x1;
+                    chip8->V[chip8->inst.X] >>= 1;
+                    break;
+                case 0x7:
+                    // 0x8XY7 performs VX = VY - VX and sets VF = 0 when there is an underflow else set VF = 0
+                    if (chip8->V[chip8->inst.X] <= chip8->V[chip8->inst.Y]) { // checking for underflow
+                        chip8->V[0xF] = 1;
+                    } else {
+                        chip8->V[0xF] = 0;
+                    }
+                    chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] - chip8->V[chip8->inst.X];
+                    break;
+                case 0xE:
+                    // 0x8XYE performs VX <<= VY and sets VF to the MSB of VX prior to shift
+                    chip8->V[0xF] = chip8->V[chip8->inst.X] & 0x80;
+                    chip8->V[chip8->inst.X] <<= 1;
+                    break;
+            }
             break;
         case 0x0A:
             // 0xANNN Sets index register I to NNN

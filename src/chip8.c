@@ -1,5 +1,7 @@
 #include <stdbool.h>
 #include "SDL2/SDL.h"
+#include "stdint.h"
+#include "time.h"
 
 //sdl struct
 typedef struct {
@@ -224,7 +226,8 @@ void print_debug_info(chip8_t *chip8) {
             break;
         case 0x09:
             // 0x9XY0 Skips the next instruction if VX != VY
-            printf("Skips the next instruction if V%X (0x%02X) != V%X (0x%02X)\n", chip8->inst.X, chip8->V[chip8->inst.X], chip8->inst.Y, chip8->V[chip8->inst.Y]);
+            printf("Skips the next instruction if V%X (0x%02X) != V%X (0x%02X)\n", chip8->inst.X,
+                   chip8->V[chip8->inst.X], chip8->inst.Y, chip8->V[chip8->inst.Y]);
             break;
         case 0x0A:
             printf("Sets instruction register to NNN (0x%04X)\n", chip8->inst.NNN);
@@ -232,6 +235,10 @@ void print_debug_info(chip8_t *chip8) {
         case 0x0B:
             // 0xBNNN sets PC to V0 + NNN
             printf("Sets the PC to V0 (0x%02X) + NNN (0x%04X)", chip8->V[0x0], chip8->inst.NNN);
+            break;
+        case 0x0C:
+            printf("Sets V%X (0x%02X) equal to rand() & NN (0x%02X)", chip8->inst.X, chip8->V[chip8->inst.X],
+                   chip8->inst.NN);
             break;
         case 0x0D:
             printf("Drawing\n");
@@ -461,6 +468,10 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
             // 0xBNNN sets PC to V0 + NNN
             chip8->PC = chip8->V[0x0] + chip8->inst.NNN;
             break;
+        case 0x0C:
+            // 0xCXNN sets VX = rand() & NN
+            chip8->V[chip8->inst.X] = (rand() % 256) & chip8->inst.NN;
+            break;
         case 0x0D: {
             // 0xDXYN Draws N-height sprites at cords X,Y; Read from memory location I
             // Screen pixels are XOR'd with sprite bits
@@ -516,6 +527,7 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
     clear_screen(sdl, config);
+    srand(time(NULL));
     while (chip8.state != QUIT) {
         handle_input(&chip8);
         if (chip8.state == PAUSED)

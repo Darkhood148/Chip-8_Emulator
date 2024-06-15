@@ -252,6 +252,16 @@ void print_debug_info(chip8_t *chip8) {
                 // 0xEXA1 skips next instruction if key stored in VX is not pressed
                 printf("Skips next instruction if key stored in V%X (0x%02X) is not pressed\n", chip8->inst.X,
                        chip8->V[chip8->inst.X]);
+            } else {
+                printf("Unimplemented Opcode");
+            }
+            break;
+        case 0x0F:
+            switch (chip8->inst.NN) {
+                // 0xFX0A await a key press, then store it in VX
+                case 0x0A:
+                    printf("Awaiting a key press to store in V%X", chip8->inst.X);
+                    break;
             }
             break;
         default:
@@ -627,6 +637,22 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
                 // 0xEXA1 skips next instruction if key stored in VX is not pressed
                 if (!chip8->keypad[chip8->V[chip8->inst.X]]) {
                     chip8->PC += 2;
+                }
+            }
+            break;
+        case 0x0F:
+            switch (chip8->inst.NN) {
+                // 0xFX0A await a key press, then store it in VX
+                case 0x0A: {
+                    bool any_key_pressed = false;
+                    for (uint8_t i = 0; i < sizeof(chip8->keypad); i++) {
+                        if (chip8->keypad[i]) {
+                            chip8->V[chip8->inst.X] = i;
+                            any_key_pressed = true;
+                        }
+                    }
+                    if (!any_key_pressed)
+                        chip8->PC -= 2;
                 }
             }
             break;

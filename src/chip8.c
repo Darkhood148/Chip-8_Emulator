@@ -277,7 +277,11 @@ void print_debug_info(chip8_t *chip8) {
                     break;
                     // 0xFX1E performs I += VX
                 case 0x1E:
-                    printf("Performs I (0x%04X) += V%X (0x%02X)", chip8->I, chip8->inst.X, chip8->V[chip8->inst.X]);
+                    printf("Performs I (0x%04X) += V%X (0x%02X)\n", chip8->I, chip8->inst.X, chip8->V[chip8->inst.X]);
+                    break;
+                    // 0xFX29 sets I = location of font in VX
+                case 0x29:
+                    printf("Sets I = address of font in V%X (0x%02X)\n", chip8->inst.X, chip8->V[chip8->inst.X]);
                     break;
             }
             break;
@@ -687,6 +691,10 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
                     // 0xFX1E performs I += VX
                 case 0x1E:
                     chip8->I += chip8->V[chip8->inst.X];
+                    break;
+                    // 0xFX29 sets I = location of font in VX
+                case 0x29:
+                    chip8->I = chip8->V[chip8->inst.X] * 5;
                     break;
             }
             break;

@@ -283,6 +283,11 @@ void print_debug_info(chip8_t *chip8) {
                 case 0x29:
                     printf("Sets I = address of font in V%X (0x%02X)\n", chip8->inst.X, chip8->V[chip8->inst.X]);
                     break;
+                case 0x33:
+                    printf("Stores BCD format of V%X (0x%02X) at I (0x%04X)\n", chip8->inst.X, chip8->V[chip8->inst.X],
+                           chip8->I);
+                    break;
+
             }
             break;
         default:
@@ -696,6 +701,17 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
                 case 0x29:
                     chip8->I = chip8->V[chip8->inst.X] * 5;
                     break;
+                    // 0xFX33 sets bcd value of VX at I
+                    // hundreds place at I, tens place at I+1, ones place at I+2
+                case 0x33: {
+                    uint8_t bcd = chip8->V[chip8->inst.X];
+                    chip8->ram[chip8->I + 2] = bcd % 10;
+                    bcd /= 10;
+                    chip8->ram[chip8->I + 1] = bcd % 10;
+                    bcd /= 10;
+                    chip8->ram[chip8->I] = bcd % 10;
+                    break;
+                }
             }
             break;
         default:

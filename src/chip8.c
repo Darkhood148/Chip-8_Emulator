@@ -287,6 +287,12 @@ void print_debug_info(chip8_t *chip8) {
                     printf("Stores BCD format of V%X (0x%02X) at I (0x%04X)\n", chip8->inst.X, chip8->V[chip8->inst.X],
                            chip8->I);
                     break;
+                case 0x55:
+                    printf("Performs regdump of V0-V%X at address I (0x%04X)\n", chip8->inst.X, chip8->I);
+                    break;
+                case 0x65:
+                    printf("Performs regload of V0-V%X at address I (0x%04X)\n", chip8->inst.X, chip8->I);
+                    break;
 
             }
             break;
@@ -712,6 +718,16 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
                     chip8->ram[chip8->I] = bcd % 10;
                     break;
                 }
+                case 0x55:
+                    for (uint8_t i = 0; i <= chip8->inst.X; i++) {
+                        chip8->ram[chip8->I + i] = chip8->V[i];
+                    }
+                    break;
+                case 0x65:
+                    for (uint8_t i = 0; i <= chip8->inst.X; i++) {
+                        chip8->V[i] = chip8->ram[chip8->I + i];
+                    }
+                    break;
             }
             break;
         default:

@@ -17,6 +17,7 @@ typedef struct {
     uint32_t bgColor;
     uint32_t scaleFactor;
     bool pixelOutlines;
+    uint32_t insts_per_second;
 } config_t;
 
 //emulator states
@@ -62,6 +63,7 @@ bool set_config(config_t *config, int argc, char **argv) {
             .bgColor = 0x000000FF,
             .scaleFactor = 20,
             .pixelOutlines = true,
+            .insts_per_second = 660,
     };
 }
 
@@ -735,6 +737,14 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
     }
 }
 
+void update_timers(chip8_t *chip8) {
+    if (chip8->delayTimer > 0)
+        chip8->delayTimer--;
+    if (chip8->soundTimer > 0) {
+        chip8->soundTimer--;
+    }
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <rom-path>\n", argv[0]);
@@ -756,9 +766,14 @@ int main(int argc, char **argv) {
         handle_input(&chip8);
         if (chip8.state == PAUSED)
             continue;
-        emulate_instruction(&chip8, config);
+        const uint64_t start = SDL_GetPerformanceCounter();
+        for (uint32_t i = 0; i < config.insts_per_second / 60; i++)
+            emulate_instruction(&chip8, config);
+        const uint64_t end = SDL_GetPerformanceCounter();
+        double time_elapsed = (double)(((end - start) * 1000) / SDL_GetPerformanceFrequency());
         update_screen(sdl, config, &chip8);
-        SDL_Delay(16);
+        SDL_Delay(16.67f > time_elapsed ? 16.67f - time_elapsed : 0);
+        update_timers(&chip8);
     }
     quit_sdl(sdl);
     exit(EXIT_SUCCESS);

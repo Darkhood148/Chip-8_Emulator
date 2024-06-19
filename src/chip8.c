@@ -7,6 +7,8 @@
 typedef struct {
     SDL_Window *window;
     SDL_Renderer *renderer;
+    SDL_AudioSpec want, have;
+    SDL_AudioDeviceID dev;
 } sdl_t;
 
 //config stuff
@@ -18,6 +20,9 @@ typedef struct {
     uint32_t scaleFactor;
     bool pixelOutlines;
     uint32_t insts_per_second;
+    uint32_t square_wave_freq;
+    uint32_t audio_sample_rate;
+    int16_t volume;
 } config_t;
 
 //emulator states
@@ -63,24 +68,61 @@ bool set_config(config_t *config, int argc, char **argv) {
             .bgColor = 0x000000FF,
             .scaleFactor = 20,
             .pixelOutlines = true,
-            .insts_per_second = 660,
+            .insts_per_second = 600,
+            .square_wave_freq = 440,
+            .audio_sample_rate = 44100,
+            .volume = 3000,
     };
 }
 
+void audio_callback(void *user_data, uint8_t *stream, int len) {
+    config_t *config = (config_t *)user_data;
+    int16_t *audio_data = (int16_t *)stream;
+    static uint32_t running_sample_index = 0;
+    const int32_t square_wave_period = config->audio_sample_rate / config->square_wave_freq;
+    const int32_t half_square_wave_period = square_wave_period / 2;
+
+    for (int i = 0; i < len / 2; i++) {
+        audio_data[i] = ((running_sample_index++ / half_square_wave_period) % 2) ? config->volume : -config->volume;
+    }
+}
+
 //inits SDL
-bool init_sdl(sdl_t *sdl, const config_t config) {
+bool init_sdl(sdl_t *sdl, config_t *config) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) != 0) {
         SDL_Log("Error Occurred: %s", SDL_GetError());
         return false;
     }
     sdl->window = SDL_CreateWindow("CHIP8-Emulator", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                   config.windowWidth * config.scaleFactor,
-                                   config.windowHeight * config.scaleFactor, 0);
+                                   config->windowWidth * config->scaleFactor,
+                                   config->windowHeight * config->scaleFactor, 0);
     if (!sdl->window) {
         SDL_Log("Could not create window: %s\n", SDL_GetError());
         return false;
     }
     sdl->renderer = SDL_CreateRenderer(sdl->window, -1, SDL_RENDERER_ACCELERATED);
+
+    sdl->want = (SDL_AudioSpec) {
+            .freq = 44100,
+            .format = AUDIO_S16LSB,
+            .channels = 1,
+            .samples = 512,
+            .callback = audio_callback,
+            .userdata = config,
+    };
+
+    sdl->dev = SDL_OpenAudioDevice(NULL, 0, &sdl->want, &sdl->have, 0);
+
+    if (!sdl->dev) {
+        SDL_Log("Could not get Audio Device: %s\n", SDL_GetError());
+        return false;
+    }
+
+    if (sdl->want.channels != sdl->have.channels || sdl->want.format != sdl->have.format) {
+        SDL_Log("Could not get Audio Device with required specs: %s\n", SDL_GetError());
+        return false;
+    }
+
     return true;
 }
 
@@ -310,6 +352,7 @@ void print_debug_info(chip8_t *chip8) {
 bool quit_sdl(const sdl_t sdl) {
     SDL_DestroyRenderer(sdl.renderer);
     SDL_DestroyWindow(sdl.window);
+    SDL_CloseAudioDevice(sdl.dev);
     SDL_Quit();
 }
 
@@ -737,11 +780,14 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
     }
 }
 
-void update_timers(chip8_t *chip8) {
+void update_timers(const sdl_t sdl, chip8_t *chip8) {
     if (chip8->delayTimer > 0)
         chip8->delayTimer--;
     if (chip8->soundTimer > 0) {
         chip8->soundTimer--;
+        SDL_PauseAudioDevice(sdl.dev, 0);
+    } else {
+        SDL_PauseAudioDevice(sdl.dev, 1);
     }
 }
 
@@ -757,7 +803,7 @@ int main(int argc, char **argv) {
     if (!init_chip8(&chip8, romName))
         exit(EXIT_FAILURE);
     set_config(&config, argc, argv);
-    if (!init_sdl(&sdl, config)) {
+    if (!init_sdl(&sdl, &config)) {
         exit(EXIT_FAILURE);
     }
     clear_screen(sdl, config);
@@ -770,10 +816,10 @@ int main(int argc, char **argv) {
         for (uint32_t i = 0; i < config.insts_per_second / 60; i++)
             emulate_instruction(&chip8, config);
         const uint64_t end = SDL_GetPerformanceCounter();
-        double time_elapsed = (double)(((end - start) * 1000) / SDL_GetPerformanceFrequency());
-        update_screen(sdl, config, &chip8);
+        double time_elapsed = (double) ((end - start) * 1000) / SDL_GetPerformanceFrequency();
         SDL_Delay(16.67f > time_elapsed ? 16.67f - time_elapsed : 0);
-        update_timers(&chip8);
+        update_screen(sdl, config, &chip8);
+        update_timers(sdl, &chip8);
     }
     quit_sdl(sdl);
     exit(EXIT_SUCCESS);

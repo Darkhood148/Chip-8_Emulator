@@ -96,6 +96,12 @@ bool set_config(config_t *config, int argc, char **argv) {
             .volume = 3000,
             .color_lerp_rate = 0.7f,
     };
+
+    for (int i = 0; i < argc; i++) {
+        if (strncmp(argv[i], "--scale-factor", strlen("--scale-factor")) == 0) {
+            config->scaleFactor = (uint32_t) strtol(argv[i], NULL, 10);
+        }
+    }
 }
 
 void audio_callback(void *user_data, uint8_t *stream, int len) {
@@ -518,6 +524,14 @@ void handle_input(chip8_t *chip8, config_t *config) {
                     case SDLK_k:
                         if (config->color_lerp_rate < 1)
                             config->color_lerp_rate += 0.1f;
+                        break;
+                    case SDLK_o:
+                        if (config->volume > 0)
+                            config->volume -= 500;
+                        break;
+                    case SDLK_p:
+                        if (config->volume < INT16_MAX)
+                            config->volume += 500;
                         break;
                     case SDLK_1:
                         chip8->keypad[0x1] = true;

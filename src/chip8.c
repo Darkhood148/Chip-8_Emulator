@@ -667,42 +667,40 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
                     // 0x8XY3 performs VX |= VY
                     chip8->V[chip8->inst.X] ^= chip8->V[chip8->inst.Y];
                     break;
-                case 0x4:
+                case 0x4: {
                     // 0x8XY4 sets VX += VY sets VF = 1 if there is an overflow otherwise sets VF = 0
-                    if ((uint16_t) chip8->V[chip8->inst.X] + chip8->V[chip8->inst.Y] >= 0xFF) { // checking for overflow
-                        chip8->V[0xF] = 1;
-                    } else {
-                        chip8->V[0xF] = 0;
-                    }
+                    const bool carry = (uint16_t) chip8->V[chip8->inst.X] + chip8->V[chip8->inst.Y] > 0xFF;
                     chip8->V[chip8->inst.X] += chip8->V[chip8->inst.Y];
+                    chip8->V[0xF] = carry;
+                }
                     break;
-                case 0x5:
+                case 0x5: {
                     // 0x8XY5 performs VX -= VY sets VF = 0 if there is an underflow otherwise sets VF = 1
-                    if (chip8->V[chip8->inst.X] >= chip8->V[chip8->inst.Y]) { // checking for underflow
-                        chip8->V[0xF] = 1;
-                    } else {
-                        chip8->V[0xF] = 0;
-                    }
+                    const bool carry = chip8->V[chip8->inst.X] >= chip8->V[chip8->inst.Y];
                     chip8->V[chip8->inst.X] -= chip8->V[chip8->inst.Y];
+                    chip8->V[0xF] = carry;
+                }
                     break;
-                case 0x6:
+                case 0x6: {
                     // 0x8XY6 performs VX >>= 1 and sets VF to the LSB of VX prior to shift
-                    chip8->V[0xF] = chip8->V[chip8->inst.X] & 0x1;
+                    const bool carry = chip8->V[chip8->inst.X] & 0x1;
                     chip8->V[chip8->inst.X] >>= 1;
+                    chip8->V[0xF] = carry;
+                }
                     break;
-                case 0x7:
+                case 0x7: {
                     // 0x8XY7 performs VX = VY - VX and sets VF = 0 when there is an underflow else set VF = 0
-                    if (chip8->V[chip8->inst.X] <= chip8->V[chip8->inst.Y]) { // checking for underflow
-                        chip8->V[0xF] = 1;
-                    } else {
-                        chip8->V[0xF] = 0;
-                    }
+                    const bool carry = chip8->V[chip8->inst.X] <= chip8->V[chip8->inst.Y];
                     chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] - chip8->V[chip8->inst.X];
+                    chip8->V[0xF] = carry;
+                }
                     break;
-                case 0xE:
+                case 0xE: {
                     // 0x8XYE performs VX <<= VY and sets VF to the MSB of VX prior to shift
-                    chip8->V[0xF] = (chip8->V[chip8->inst.X] & 0x80) >> 0x7;
+                    const bool carry = (chip8->V[chip8->inst.X] & 0x80) >> 0x7;
                     chip8->V[chip8->inst.X] <<= 1;
+                    chip8->V[0xF] = carry;
+                }
                     break;
             }
             break;

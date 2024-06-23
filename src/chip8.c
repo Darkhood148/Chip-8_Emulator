@@ -11,6 +11,13 @@ typedef struct {
     SDL_AudioDeviceID dev;
 } sdl_t;
 
+//CHIP8 Extension
+typedef enum {
+    CHIP8,
+    SUPERCHIP,
+    XOCHIP,
+} extension_t;
+
 //config stuff
 typedef struct {
     uint32_t windowWidth;
@@ -24,6 +31,7 @@ typedef struct {
     uint32_t audio_sample_rate;
     int16_t volume;
     float color_lerp_rate;
+    extension_t extension;
 } config_t;
 
 //emulator states
@@ -90,11 +98,12 @@ bool set_config(config_t *config, int argc, char **argv) {
             .bgColor = 0x000000FF,
             .scaleFactor = 20,
             .pixelOutlines = true,
-            .insts_per_second = 600,
+            .insts_per_second = 500,
             .square_wave_freq = 440,
             .audio_sample_rate = 44100,
             .volume = 3000,
             .color_lerp_rate = 0.7f,
+            .extension = CHIP8,
     };
 
     for (int i = 0; i < argc; i++) {
@@ -658,14 +667,20 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
                 case 0x1:
                     // 0x8XY1 performs VX |= VY
                     chip8->V[chip8->inst.X] |= chip8->V[chip8->inst.Y];
+                    if (config.extension == CHIP8)
+                        chip8->V[0xF] = 0;
                     break;
                 case 0x2:
                     // 0x8XY2 performs VX &= VY
                     chip8->V[chip8->inst.X] &= chip8->V[chip8->inst.Y];
+                    if (config.extension == CHIP8)
+                        chip8->V[0xF] = 0;
                     break;
                 case 0x3:
                     // 0x8XY3 performs VX |= VY
                     chip8->V[chip8->inst.X] ^= chip8->V[chip8->inst.Y];
+                    if (config.extension == CHIP8)
+                        chip8->V[0xF] = 0;
                     break;
                 case 0x4: {
                     // 0x8XY4 sets VX += VY sets VF = 1 if there is an overflow otherwise sets VF = 0
@@ -683,8 +698,14 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
                     break;
                 case 0x6: {
                     // 0x8XY6 performs VX >>= 1 and sets VF to the LSB of VX prior to shift
-                    const bool carry = chip8->V[chip8->inst.X] & 0x1;
-                    chip8->V[chip8->inst.X] >>= 1;
+                    bool carry;
+                    if (config.extension == CHIP8) {
+                        carry = chip8->V[chip8->inst.Y] & 0x1;
+                        chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] >> 1;
+                    } else {
+                        carry = chip8->V[chip8->inst.X] & 0x1;
+                        chip8->V[chip8->inst.X] >>= 1;
+                    }
                     chip8->V[0xF] = carry;
                 }
                     break;
@@ -697,8 +718,14 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
                     break;
                 case 0xE: {
                     // 0x8XYE performs VX <<= VY and sets VF to the MSB of VX prior to shift
-                    const bool carry = (chip8->V[chip8->inst.X] & 0x80) >> 0x7;
-                    chip8->V[chip8->inst.X] <<= 1;
+                    bool carry;
+                    if (config.extension == CHIP8) {
+                        carry = (chip8->V[chip8->inst.Y] & 0x80) >> 7;
+                        chip8->V[chip8->inst.X] = chip8->V[chip8->inst.Y] << 1;
+                    } else {
+                        carry = (chip8->V[chip8->inst.X] & 0x80) >> 0x7;
+                        chip8->V[chip8->inst.X] <<= 1;
+                    }
                     chip8->V[0xF] = carry;
                 }
                     break;
@@ -778,15 +805,25 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
                     break;
                     // 0xFX0A await a key press, then store it in VX
                 case 0x0A: {
-                    bool any_key_pressed = false;
-                    for (uint8_t i = 0; i < sizeof(chip8->keypad); i++) {
+                    static bool any_key_pressed = false;
+                    static uint8_t key = 0xFF;
+                    for (uint8_t i = 0; key == 0xFF && i < sizeof(chip8->keypad); i++) {
                         if (chip8->keypad[i]) {
-                            chip8->V[chip8->inst.X] = i;
+                            key = i;
                             any_key_pressed = true;
                         }
                     }
                     if (!any_key_pressed)
                         chip8->PC -= 2;
+                    else {
+                        if (chip8->keypad[key])
+                            chip8->PC -= 2;
+                        else {
+                            chip8->V[chip8->inst.X] = key;
+                            key = 0xFF;
+                            any_key_pressed = false;
+                        }
+                    }
                     break;
                 }
                     // 0xFX15 sets delayTimer = VX
@@ -818,12 +855,18 @@ void emulate_instruction(chip8_t *chip8, config_t config) {
                 }
                 case 0x55:
                     for (uint8_t i = 0; i <= chip8->inst.X; i++) {
-                        chip8->ram[chip8->I + i] = chip8->V[i];
+                        if (config.extension == CHIP8)
+                            chip8->ram[chip8->I++] = chip8->V[i];
+                        else
+                            chip8->ram[chip8->I + i] = chip8->V[i];
                     }
                     break;
                 case 0x65:
                     for (uint8_t i = 0; i <= chip8->inst.X; i++) {
-                        chip8->V[i] = chip8->ram[chip8->I + i];
+                        if (config.extension == CHIP8)
+                            chip8->V[i] = chip8->ram[chip8->I++];
+                        else
+                            chip8->V[i] = chip8->ram[chip8->I + i];
                     }
                     break;
             }
